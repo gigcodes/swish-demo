@@ -1,0 +1,51 @@
+---
+name: Compute-Instance
+on:
+ workflow_dispatch:
+   inputs:
+     Operation_needed:
+      type: choice
+      description:  What operation need to be performed
+      options:
+        - Select operations to be performed
+        - Create
+        - Delete
+      required: true
+
+jobs:
+ Compute-Instance-Plan:
+   runs-on: ubuntu-latest
+   if: ${{ github.event.input.Operation_needed == 'Create'}}
+   steps:
+     - name: Checkout Code
+       uses: actions/checkout@v2
+
+     - name: Date of infrastructure created
+       uses: echo "::ser-output name=current_date::$(date +"%d-%m-%y")"
+       id: date
+
+     - name: setup-terraform
+       uses: hashicorp/setup-terraform@v2
+
+     - name: Authentication to GCP
+       uses: 'google-github-actions/auth@v0'
+       with:
+         credentails_json: '${{ secrets.SERVICE_ACCOUNT_KEY }}'
+
+     - name: Terraform init
+       id: initalize
+       run: |
+         cd Terraform_module
+         terraform init
+
+     - name: Terraform validate
+       id: validate
+       run: |
+         cd Terraform_module
+         terraform validate
+
+     - name: Terraform init
+       id: Plan
+       run: |
+         cd Terraform_module
+         terraform plan
