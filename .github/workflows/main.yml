@@ -1,4 +1,5 @@
-name: Deploy Laravel App
+name: Deploy
+
 on:
   push:
     branches:
@@ -7,20 +8,51 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
-    - name: Checkout code
+    - name: Checkout
       uses: actions/checkout@v2
-    - name: Set up SSH
+
+    - name: Setup SSH key
       uses: webfactory/ssh-agent@v0.4.0
       with:
         ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-    - name: Add the SSH key
-      run: ssh-add <(echo "$SSH_PRIVATE_KEY")
-    - name: Deploy to GCE instance
-      run: |
-        rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" . ${{ secrets.GCE_USER }}@{{ secrets.GCE_IP }}:/var/www/laravel-app
-        ssh ${{ secrets.GCE_USER }}@{{ secrets.GCE_IP }} 'cd /var/www/laravel-app && composer update'
-    - name: Set env vars
-      run: |
-        ssh ${{ secrets.GCE_USER }}@{{ secrets.GCE_IP }} 'export DB_HOST={{ secrets.DB_HOST }} && export DB_DATABASE={{ secrets.DB_DATABASE }} && export DB_USERNAME={{ secrets.DB_USERNAME }} && export DB_PASSWORD={{ secrets.DB_PASSWORD }}'
 
+    - name: Deploy
+      run: |
+        rsync -avz -e "ssh -o StrictHostKeyChecking=no" \
+        --exclude='vendor' --exclude='node_modules' --exclude='.git' \
+        --exclude='.github' --exclude='storage' \
+        .  example@<IP_ADDRESS>:/var/www/laravel
+      env:
+        IP_ADDRESS: ${{ secrets.IP_ADDRESS }}
+
+    - name: Install dependencies
+      run: |
+        ssh example@<IP_ADDRESS> 'cd /var/www/laravel && composer install'
+      env:
+        IP_ADDRESS: ${{ secrets.IP_ADDRESS }}
+
+    - name: Configure Nginx
+      run: |
+        ssh example@<IP_ADDRESS> 'sudo apt-get update && sudo apt-get install nginx -y'
+        ssh example@<IP_ADDRESS> 'sudo rm /etc/nginx/sites-available/default'
+        ssh example@<IP_ADDRESS> 'sudo touch /etc/nginx/sites-available/default'
+        ssh example@<IP_ADDRESS> 'sudo echo "server {
+                listen 80;
+                listen [::]:80;
+                root /var/www/laravel/public;
+                index index.php index.html index.htm;
+                server_name _;
+                location / {
+                        try_files \$uri \$uri/ /index.php?\$query_string;
+                }
+                location ~ \.php$ {
+                        include snippets/fastcgi-php.conf;
+                        fastcgi_pass unix:/var/run/php/php7.4-fpm.sock;
+                }
+                location ~ /\.ht {
+                        deny all;
+                }
+        }" > /etc/nginx/sites-available/default'
+        ssh example@<IP_ADDRESS> 'sudo systemctl restart
