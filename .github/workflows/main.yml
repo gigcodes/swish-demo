@@ -1,0 +1,26 @@
+name: Deploy Laravel App
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+    - name: Set up SSH
+      uses: webfactory/ssh-agent@v0.4.0
+      with:
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+    - name: Add the SSH key
+      run: ssh-add <(echo "$SSH_PRIVATE_KEY")
+    - name: Deploy to GCE instance
+      run: |
+        rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" . ${{ secrets.GCE_USER }}@{{ secrets.GCE_IP }}:/var/www/laravel-app
+        ssh ${{ secrets.GCE_USER }}@{{ secrets.GCE_IP }} 'cd /var/www/laravel-app && composer update'
+    - name: Set env vars
+      run: |
+        ssh ${{ secrets.GCE_USER }}@{{ secrets.GCE_IP }} 'export DB_HOST={{ secrets.DB_HOST }} && export DB_DATABASE={{ secrets.DB_DATABASE }} && export DB_USERNAME={{ secrets.DB_USERNAME }} && export DB_PASSWORD={{ secrets.DB_PASSWORD }}'
+
