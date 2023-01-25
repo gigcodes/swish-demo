@@ -7,7 +7,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
 
     steps:
     - name: Checkout
@@ -18,41 +18,50 @@ jobs:
       with:
         ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-    - name: Deploy
+    - name: Install dependencies
+      run: |
+        ssh ubuntu@<IP_ADDRESS> 'sudo apt-get update && sudo apt-get install git nginx php8.1-fpm php-common php-cli php-mbstring php-xml php-zip -y'
+      env:
+        IP_ADDRESS: ${{ secrets.IP_ADDRESS }}
+
+    - name: Install composer
+      run: |
+        ssh ubuntu@<IP_ADDRESS> 'sudo curl -sS https://getcomposer.org/installer -o composer-setup.php'
+        ssh ubuntu@<IP_ADDRESS> 'sudo php composer-setup.php --install-dir=/usr/local/bin --filename=composer'
+      env:
+        IP_ADDRESS: ${{ secrets.IP_ADDRESS }}
+
+    
+    - name: Deploy code
       run: |
         rsync -avz -e "ssh -o StrictHostKeyChecking=no" \
         --exclude='vendor' --exclude='node_modules' --exclude='.git' \
         --exclude='.github' --exclude='storage' \
-        .  example@<IP_ADDRESS>:/var/www/laravel
+        .  ubuntu@<IP_ADDRESS>:/var/www/laravel
       env:
         IP_ADDRESS: ${{ secrets.IP_ADDRESS }}
 
-    - name: Install dependencies
+    - name: Install PHP dependencies
       run: |
-        ssh example@<IP_ADDRESS> 'cd /var/www/laravel && composer install'
+        ssh ubuntu@<IP_ADDRESS> 'cd /var/www/laravel && composer install'
       env:
         IP_ADDRESS: ${{ secrets.IP_ADDRESS }}
 
     - name: Configure Nginx
       run: |
-        ssh example@<IP_ADDRESS> 'sudo apt-get update && sudo apt-get install nginx -y'
-        ssh example@<IP_ADDRESS> 'sudo rm /etc/nginx/sites-available/default'
-        ssh example@<IP_ADDRESS> 'sudo touch /etc/nginx/sites-available/default'
-        ssh example@<IP_ADDRESS> 'sudo echo "server {
+        ssh ubuntu@<IP_ADDRESS> 'sudo rm /etc/nginx/sites-available/default'
+        ssh ubuntu@<IP_ADDRESS> 'sudo touch /etc/nginx/sites-available/default'
+        ssh ubuntu@<IP_ADDRESS> 'sudo echo "server {
                 listen 80;
                 listen [::]:80;
+                server_name <DOMAIN_NAME>;
                 root /var/www/laravel/public;
                 index index.php index.html index.htm;
-                server_name _;
                 location / {
-                        try_files \$uri \$uri/ /index.php?\$query_string;
+                    try_files $uri $uri/ /index.php$is_args$args;
                 }
                 location ~ \.php$ {
-                        include snippets/fastcgi-php.conf;
-                        fastcgi_pass unix:/var/run/php/php7.4-fpm.sock;
+                    fastcgi_pass unix:/var/run/php/php8.1-fpm.sock;
+                    include snippets/fastcgi-php.conf;
                 }
-                location ~ /\.ht {
-                        deny all;
-                }
-        }" > /etc/nginx/sites-available/default'
-        ssh example@<IP_ADDRESS> 'sudo systemctl restart
+            }" > /etc/nginx/sites-available/default'
